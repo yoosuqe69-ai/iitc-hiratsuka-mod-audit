@@ -2,8 +2,8 @@
 // @id             iitc-plugin-hiratsuka-mod-audit
 // @name           IITC plugin: Hiratsuka MOD Audit
 // @category       Info
-// @version        0.1.0
-// @description    Hiratsuka MOD audit copy helper
+// @version        0.2.0
+// @description    Hiratsuka MOD audit copy helper with unknown MOD detection
 // @match          https://intel.ingress.com/*
 // @grant          none
 // ==/UserScript==
@@ -37,20 +37,34 @@ function wrapper() {
 
   self.analyzeMods = function(mods) {
     var result = {
+      known: true,
       shield: [],
       turret: false,
       fa: false,
       hack: [],
       empty: 0,
+      ignored: [],
       judge: '軽い'
     };
 
+    if (!Array.isArray(mods)) {
+      result.known = false;
+      result.judge = 'MOD未取得';
+      return result;
+    }
+
     for (var i = 0; i < 4; i++) {
-      var mod = mods && mods[i] ? mods[i] : null;
+      var mod = mods[i] ? mods[i] : null;
+
+      if (!mod) {
+        result.empty++;
+        continue;
+      }
+
       var c = self.classifyMod(mod);
 
       if (!c) {
-        result.empty++;
+        result.ignored.push(mod.name || mod.displayName || 'OTHER');
         continue;
       }
 
@@ -70,17 +84,43 @@ function wrapper() {
       result.judge = result.judge === '硬い' ? '硬い+反撃あり' : '反撃あり';
     }
 
+    if (
+      result.shield.length === 0 &&
+      !result.turret &&
+      !result.fa &&
+      result.hack.length === 0 &&
+      result.empty === 4
+    ) {
+      result.judge = 'MODなし';
+    }
+
     return result;
   };
 
   self.portalLine = function(p) {
     var d = p.options.data || {};
-    var m = self.analyzeMods(d.mods || []);
+    var mods = d.hasOwnProperty('mods') ? d.mods : undefined;
+    var m = self.analyzeMods(mods);
 
     var faction =
       d.team === 'E' ? 'ENL' :
       d.team === 'R' ? 'RES' :
       d.team || '-';
+
+    if (!m.known) {
+      return [
+        d.title || '(no name)',
+        faction,
+        'L' + (d.level || '-'),
+        (d.health || '-') + '%',
+        'MOD未取得',
+        '-',
+        '-',
+        '-',
+        '-',
+        '未取得'
+      ].join(' / ');
+    }
 
     return [
       d.title || '(no name)',
@@ -99,7 +139,7 @@ function wrapper() {
   self.buildLog = function() {
     var lines = [];
 
-    lines.push('【平塚MOD監査ログ】');
+    lines.push('【平塚MOD監査ログ v0.2】');
     lines.push('形式：Portal / Faction / Lv / Health / Shield / Turret / FA / Hack / Empty / 判定');
     lines.push('');
 
@@ -154,7 +194,7 @@ function wrapper() {
 
   self.setup = function() {
     self.addButton();
-    console.log('Hiratsuka MOD Audit loaded');
+    console.log('Hiratsuka MOD Audit v0.2 loaded');
   };
 
   var setup = self.setup;
