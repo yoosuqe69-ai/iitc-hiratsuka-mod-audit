@@ -1,9 +1,9 @@
 // ==UserScript==
 // @id             iitc-plugin-hiratsuka-mod-audit
-// @name           IITC plugin: Hiratsuka MOD Audit
+// @name           IITC plugin: Hiratsuka MOD Portal List
 // @category       Info
-// @version        0.5.0
-// @description    Hiratsuka MOD audit semi-auto slow detail fetcher
+// @version        0.6.0
+// @description    Hiratsuka MOD audit portal list with weak/hard sorting
 // @match          https://intel.ingress.com/*
 // @grant          none
 // ==/UserScript==
@@ -14,33 +14,22 @@ function wrapper() {
   window.plugin.hiratsukaModAudit = function() {};
   var self = window.plugin.hiratsukaModAudit;
 
-  // ===== 設定 =====
-  self.MIN_LEVEL = 6;          // L6以上
-  self.TARGET_TEAM = 'E';      // ENLのみ。全勢力なら null
-  self.MAX_TARGETS = 20;       // 1回の最大取得件数
-  self.DELAY_MS = 5000;        // 1件ごとの待機時間 5秒
+  self.MIN_LEVEL = 6;
+  self.TARGET_TEAM = 'E';
+  self.MAX_TARGETS = 20;
+  self.DELAY_MS = 5000;
 
   self.queue = [];
   self.running = false;
   self.timer = null;
   self.results = {};
+  self.sortMode = 'weak';
 
   self.classifyMod = function(mod) {
     if (!mod) return null;
 
-    var name = (
-      mod.name ||
-      mod.displayName ||
-      mod.type ||
-      mod.itemType ||
-      ''
-    ).toLowerCase();
-
-    var rarity = (
-      mod.rarity ||
-      mod.rarityString ||
-      ''
-    ).toLowerCase();
+    var name = (mod.name || mod.displayName || mod.type || mod.itemType || '').toLowerCase();
+    var rarity = (mod.rarity || mod.rarityString || '').toLowerCase();
 
     if (name.indexOf('shield') >= 0) {
       if (rarity.indexOf('very') >= 0 || name.indexOf('very') >= 0 || name.indexOf('vr') >= 0) return 'VRSH';
@@ -95,12 +84,16 @@ function wrapper() {
       fa: false,
       hack: [],
       empty: 0,
-      judge: '軽い'
+      judge: '軽い',
+      weakScore: 0,
+      hardScore: 0,
+      weakLabel: '不明'
     };
 
     if (!Array.isArray(mods)) {
       result.known = false;
       result.judge = 'MOD未取得';
+      result.weakLabel = '未取得';
       return result;
     }
 
@@ -114,9 +107,7 @@ function wrapper() {
 
       var c = self.classifyMod(mod);
 
-      if (!c) {
-        continue;
-      }
+      if (!c) continue;
 
       if (c.indexOf('SH') >= 0) result.shield.push(c);
       else if (c === 'TURRET') result.turret = true;
@@ -124,7 +115,26 @@ function wrapper() {
       else if (c === 'HS' || c === 'MH') result.hack.push(c);
     }
 
-    if (result.shield.length >= 2 || result.shield.indexOf('VRSH') >= 0) {
+    var vr = result.shield.filter(function(x) { return x === 'VRSH'; }).length;
+    var rare = result.shield.filter(function(x) { return x === 'RSH'; }).length;
+    var common = result.shield.filter(function(x) { return x === 'CSH'; }).length;
+
+    result.hardScore += vr * 4;
+    result.hardScore += rare * 3;
+    result.hardScore += common * 1;
+    if (result.turret) result.hardScore += 4;
+    if (result.fa) result.hardScore += 4;
+
+    result.weakScore += result.empty * 2;
+    if (vr === 0) result.weakScore += 3;
+    if (!result.turret && !result.fa) result.weakScore += 4;
+    if (result.shield.length <= 2) result.weakScore += 2;
+    if (result.shield.length >= 3) result.weakScore -= 2;
+    if (vr >= 2) result.weakScore -= 5;
+    if (result.turret) result.weakScore -= 3;
+    if (result.fa) result.weakScore -= 3;
+
+    if (result.shield.length >= 2 || vr >= 1) {
       result.judge = '硬い';
     }
 
@@ -144,54 +154,46 @@ function wrapper() {
       result.judge = 'MODなし';
     }
 
+    if (result.weakScore >= 7) result.weakLabel = '脆弱A';
+    else if (result.weakScore >= 4) result.weakLabel = '脆弱B';
+    else if (result.weakScore >= 1) result.weakLabel = '脆弱C';
+    else result.weakLabel = '堅牢';
+
     return result;
   };
 
-  self.portalLine = function(guid, p) {
+  self.getPortalRecord = function(guid, p) {
     var base = p.options.data || {};
     var detail = self.getDetail(guid, p);
     var mods = self.getMods(guid, p);
     var m = self.analyzeMods(mods);
-
     var d = detail || base;
 
-    var title = base.title || d.title || '(no name)';
-    var level = base.level || d.level || '-';
-    var health = base.health || d.health || '-';
     var team = base.team || d.team || '-';
-
     var faction =
       team === 'E' ? 'ENL' :
       team === 'R' ? 'RES' :
       team || '-';
 
-    if (!m.known) {
-      return [
-        title,
-        faction,
-        'L' + level,
-        health + '%',
-        'MOD未取得',
-        '-',
-        '-',
-        '-',
-        '-',
-        '未取得'
-      ].join(' / ');
-    }
-
-    return [
-      title,
-      faction,
-      'L' + level,
-      health + '%',
-      m.shield.length ? m.shield.join(',') : '-',
-      m.turret ? '有' : '-',
-      m.fa ? '有' : '-',
-      m.hack.length ? m.hack.join(',') : '-',
-      m.empty,
-      m.judge
-    ].join(' / ');
+    return {
+      guid: guid,
+      portal: p,
+      title: base.title || d.title || '(no name)',
+      faction: faction,
+      team: team,
+      level: base.level || d.level || 0,
+      health: base.health || d.health || 0,
+      shield: m.known ? (m.shield.length ? m.shield.join(',') : '-') : 'MOD未取得',
+      turret: m.known ? (m.turret ? '有' : '-') : '-',
+      fa: m.known ? (m.fa ? '有' : '-') : '-',
+      hack: m.known ? (m.hack.length ? m.hack.join(',') : '-') : '-',
+      empty: m.known ? m.empty : '-',
+      judge: m.known ? m.judge : '未取得',
+      known: m.known,
+      weakScore: m.weakScore,
+      hardScore: m.hardScore,
+      weakLabel: m.weakLabel
+    };
   };
 
   self.getVisibleTargets = function() {
@@ -226,6 +228,36 @@ function wrapper() {
     return arr.slice(0, self.MAX_TARGETS);
   };
 
+  self.getRecords = function() {
+    var targets = self.getVisibleTargets();
+    var records = targets.map(function(item) {
+      return self.getPortalRecord(item.guid, item.portal);
+    });
+
+    records.sort(function(a, b) {
+      if (self.sortMode === 'weak') {
+        if (b.weakScore !== a.weakScore) return b.weakScore - a.weakScore;
+        return a.level - b.level;
+      }
+
+      if (self.sortMode === 'hard') {
+        if (b.hardScore !== a.hardScore) return b.hardScore - a.hardScore;
+        return b.level - a.level;
+      }
+
+      if (self.sortMode === 'react') {
+        var ar = (a.turret === '有' ? 1 : 0) + (a.fa === '有' ? 1 : 0);
+        var br = (b.turret === '有' ? 1 : 0) + (b.fa === '有' ? 1 : 0);
+        if (br !== ar) return br - ar;
+        return b.hardScore - a.hardScore;
+      }
+
+      return b.level - a.level;
+    });
+
+    return records;
+  };
+
   self.updateStatus = function(text) {
     var box = document.getElementById('hiratsuka-mod-audit-status');
     if (box) box.textContent = text;
@@ -243,38 +275,24 @@ function wrapper() {
     return false;
   };
 
-  self.markResult = function(item) {
-    var p = item.portal;
-    var mods = self.getMods(item.guid, p);
-    var m = self.analyzeMods(mods);
-
-    self.results[item.guid] = {
-      guid: item.guid,
-      portal: p,
-      known: m.known,
-      line: self.portalLine(item.guid, p)
-    };
-  };
-
   self.processNext = function() {
     if (!self.running) return;
 
     if (self.queue.length === 0) {
       self.running = false;
       self.updateStatus('MOD取得完了');
+      self.renderPanel();
       alert('MOD詳細取得を終了しました');
       return;
     }
 
     var item = self.queue.shift();
-    var title = item.title || '(no name)';
-
-    self.updateStatus('取得中: ' + title + ' / 残り ' + self.queue.length);
+    self.updateStatus('取得中: ' + item.title + ' / 残り ' + self.queue.length);
 
     self.requestDetail(item.guid);
 
     self.timer = setTimeout(function() {
-      self.markResult(item);
+      self.renderPanel();
       self.processNext();
     }, self.DELAY_MS);
   };
@@ -293,7 +311,6 @@ function wrapper() {
     }
 
     self.queue = targets.slice();
-    self.results = {};
     self.running = true;
 
     alert(
@@ -311,39 +328,49 @@ function wrapper() {
     if (self.timer) clearTimeout(self.timer);
     self.queue = [];
     self.updateStatus('停止');
+    self.renderPanel();
     alert('MOD取得を停止しました');
   };
 
+  self.setSort = function(mode) {
+    self.sortMode = mode;
+    self.renderPanel();
+  };
+
+  self.lineFromRecord = function(r) {
+    return [
+      r.title,
+      r.faction,
+      'L' + r.level,
+      r.health + '%',
+      r.shield,
+      r.turret,
+      r.fa,
+      r.hack,
+      r.empty,
+      r.judge,
+      r.weakLabel
+    ].join(' / ');
+  };
+
   self.buildLog = function() {
+    var records = self.getRecords();
+    var known = records.filter(function(r) { return r.known; }).length;
+    var unknown = records.length - known;
+
     var lines = [];
-    var visible = self.getVisibleTargets();
 
-    var known = 0;
-    var unknown = 0;
-
-    lines.push('【平塚MOD監査ログ v0.5】');
-    lines.push('方式：半自動・低速詳細取得');
+    lines.push('');
+    lines.push('取得済みMOD: ' + known + '件 / 未取得: ' + unknown + '件');
+    lines.push('【平塚MOD Portal List v0.6】');
+    lines.push('方式：Portal List統合 / 半自動低速取得 / ソート=' + self.sortMode);
     lines.push('条件：表示範囲内 / ENL / L' + self.MIN_LEVEL + '以上 / 最大' + self.MAX_TARGETS + '件');
-    lines.push('形式：Portal / Faction / Lv / Health / Shield / Turret / FA / Hack / Empty / 判定');
+    lines.push('形式：Portal / Faction / Lv / Health / Shield / Turret / FA / Hack / Empty / 判定 / 脆弱度');
     lines.push('');
 
-    visible.forEach(function(item) {
-      var line;
-
-      if (self.results[item.guid]) {
-        line = self.results[item.guid].line;
-      } else {
-        line = self.portalLine(item.guid, item.portal);
-      }
-
-      if (line.indexOf('MOD未取得') >= 0) unknown++;
-      else known++;
-
-      lines.push(line);
+    records.forEach(function(r) {
+      lines.push(self.lineFromRecord(r));
     });
-
-    lines.unshift('取得済みMOD: ' + known + '件 / 未取得: ' + unknown + '件');
-    lines.unshift('');
 
     return lines.join('\n');
   };
@@ -353,12 +380,79 @@ function wrapper() {
 
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(function() {
-        alert('MOD監査ログをコピーしました');
+        alert('MOD Portal Listをコピーしました');
       }).catch(function() {
         prompt('コピーしてください', text);
       });
     } else {
       prompt('コピーしてください', text);
+    }
+  };
+
+  self.renderPanel = function() {
+    var panel = document.getElementById('hiratsuka-mod-panel');
+    if (!panel) return;
+
+    var records = self.getRecords();
+    var known = records.filter(function(r) { return r.known; }).length;
+
+    var html = '';
+    html += '<div style="font-weight:bold;margin-bottom:4px;">平塚MOD Portal List v0.6</div>';
+    html += '<div>取得済み ' + known + ' / ' + records.length + '　並び:' + self.sortMode + '</div>';
+    html += '<table style="width:100%;border-collapse:collapse;margin-top:4px;">';
+    html += '<tr>';
+    html += '<th style="text-align:left;">Portal</th>';
+    html += '<th>Lv</th>';
+    html += '<th>盾</th>';
+    html += '<th>T</th>';
+    html += '<th>FA</th>';
+    html += '<th>判定</th>';
+    html += '</tr>';
+
+    records.forEach(function(r) {
+      html += '<tr style="border-top:1px solid #555;">';
+      html += '<td style="max-width:120px;overflow:hidden;white-space:nowrap;">' + r.title + '</td>';
+      html += '<td>L' + r.level + '</td>';
+      html += '<td>' + r.shield + '</td>';
+      html += '<td>' + r.turret + '</td>';
+      html += '<td>' + r.fa + '</td>';
+      html += '<td>' + r.weakLabel + '</td>';
+      html += '</tr>';
+    });
+
+    html += '</table>';
+    panel.innerHTML = html;
+  };
+
+  self.togglePanel = function() {
+    var panel = document.getElementById('hiratsuka-mod-panel');
+
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = 'hiratsuka-mod-panel';
+      panel.style.position = 'absolute';
+      panel.style.left = '8px';
+      panel.style.bottom = '50px';
+      panel.style.zIndex = '9999';
+      panel.style.width = '92%';
+      panel.style.maxHeight = '45%';
+      panel.style.overflow = 'auto';
+      panel.style.background = 'rgba(0,0,0,0.88)';
+      panel.style.color = '#fff';
+      panel.style.fontSize = '11px';
+      panel.style.padding = '8px';
+      panel.style.border = '1px solid #777';
+      panel.style.borderRadius = '4px';
+      document.body.appendChild(panel);
+      self.renderPanel();
+      return;
+    }
+
+    if (panel.style.display === 'none') {
+      panel.style.display = 'block';
+      self.renderPanel();
+    } else {
+      panel.style.display = 'none';
     }
   };
 
@@ -388,10 +482,10 @@ function wrapper() {
 
     var box = document.createElement('div');
     box.id = 'hiratsuka-mod-audit-status';
-    box.textContent = 'MOD監査 v0.5';
+    box.textContent = 'MOD Portal List v0.6';
     box.style.position = 'absolute';
     box.style.right = '8px';
-    box.style.bottom = '150px';
+    box.style.bottom = '260px';
     box.style.zIndex = '9999';
     box.style.padding = '5px 7px';
     box.style.fontSize = '11px';
@@ -406,10 +500,15 @@ function wrapper() {
 
   self.setup = function() {
     self.addStatus();
-    self.addButton('hiratsuka-mod-fetch-btn', 'MOD取得開始', 110, self.startFetch);
-    self.addButton('hiratsuka-mod-stop-btn', '停止', 80, self.stopFetch);
-    self.addButton('hiratsuka-mod-copy-btn', 'MODコピー', 50, self.copyLog);
-    console.log('Hiratsuka MOD Audit v0.5 loaded');
+    self.addButton('hiratsuka-mod-fetch-btn', 'MOD取得開始', 220, self.startFetch);
+    self.addButton('hiratsuka-mod-stop-btn', '停止', 190, self.stopFetch);
+    self.addButton('hiratsuka-mod-copy-btn', 'MODコピー', 160, self.copyLog);
+    self.addButton('hiratsuka-mod-panel-btn', '一覧', 130, self.togglePanel);
+    self.addButton('hiratsuka-mod-weak-btn', '脆弱順', 100, function() { self.setSort('weak'); });
+    self.addButton('hiratsuka-mod-hard-btn', '硬い順', 70, function() { self.setSort('hard'); });
+    self.addButton('hiratsuka-mod-react-btn', '反撃順', 40, function() { self.setSort('react'); });
+
+    console.log('Hiratsuka MOD Portal List v0.6 loaded');
   };
 
   var setup = self.setup;
