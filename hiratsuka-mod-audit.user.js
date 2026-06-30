@@ -2,8 +2,8 @@
 // @id             iitc-plugin-hiratsuka-mod-audit
 // @name           IITC plugin: Hiratsuka MOD Portal List
 // @category       Info
-// @version        0.6.1
-// @description    Hiratsuka MOD audit portal list with closable panel
+// @version        0.6.2
+// @description    Hiratsuka MOD audit compact UI
 // @match          https://intel.ingress.com/*
 // @grant          none
 // ==/UserScript==
@@ -278,14 +278,14 @@ function wrapper() {
 
     if (self.queue.length === 0) {
       self.running = false;
-      self.updateStatus('MOD取得完了');
+      self.updateStatus('完了');
       self.renderPanel();
       alert('MOD詳細取得を終了しました');
       return;
     }
 
     var item = self.queue.shift();
-    self.updateStatus('取得中: ' + item.title + ' / 残り ' + self.queue.length);
+    self.updateStatus('取得中 ' + (self.MAX_TARGETS - self.queue.length) + '/' + self.MAX_TARGETS);
 
     self.requestDetail(item.guid);
 
@@ -360,8 +360,8 @@ function wrapper() {
 
     lines.push('');
     lines.push('取得済みMOD: ' + known + '件 / 未取得: ' + unknown + '件');
-    lines.push('【平塚MOD Portal List v0.6.1】');
-    lines.push('方式：Portal List統合 / 半自動低速取得 / ソート=' + self.sortMode);
+    lines.push('【平塚MOD Portal List v0.6.2】');
+    lines.push('方式：Portal List統合 / コンパクトUI / 半自動低速取得 / ソート=' + self.sortMode);
     lines.push('条件：表示範囲内 / ENL / L' + self.MIN_LEVEL + '以上 / 最大' + self.MAX_TARGETS + '件');
     lines.push('形式：Portal / Faction / Lv / Health / Shield / Turret / FA / Hack / Empty / 判定 / 脆弱度');
     lines.push('');
@@ -401,10 +401,10 @@ function wrapper() {
 
     var html = '';
     html += '<div style="font-weight:bold;margin-bottom:4px;">';
-    html += '平塚MOD Portal List v0.6.1';
+    html += '平塚MOD List v0.6.2';
     html += '<button id="hiratsuka-mod-panel-close" style="float:right;background:#333;color:#fff;border:1px solid #aaa;border-radius:3px;">×</button>';
     html += '</div>';
-    html += '<div>取得済み ' + known + ' / ' + records.length + '　並び:' + self.sortMode + '</div>';
+    html += '<div>取得 ' + known + '/' + records.length + '　並び:' + self.sortMode + '</div>';
     html += '<table style="width:100%;border-collapse:collapse;margin-top:4px;">';
     html += '<tr>';
     html += '<th style="text-align:left;">Portal</th>';
@@ -444,7 +444,7 @@ function wrapper() {
       panel.style.bottom = '50px';
       panel.style.zIndex = '9998';
       panel.style.width = '78%';
-      panel.style.maxHeight = '45%';
+      panel.style.maxHeight = '42%';
       panel.style.overflow = 'auto';
       panel.style.background = 'rgba(0,0,0,0.88)';
       panel.style.color = '#fff';
@@ -465,59 +465,93 @@ function wrapper() {
     }
   };
 
-  self.addButton = function(id, text, bottom, handler) {
-    if (document.getElementById(id)) return;
+  self.toggleMenu = function() {
+    var menu = document.getElementById('hiratsuka-mod-menu');
 
+    if (!menu) return;
+
+    menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+  };
+
+  self.addButton = function(parent, text, handler) {
     var btn = document.createElement('button');
-    btn.id = id;
     btn.textContent = text;
-    btn.style.position = 'absolute';
-    btn.style.right = '8px';
-    btn.style.bottom = bottom + 'px';
-    btn.style.zIndex = '10000';
+    btn.style.display = 'block';
+    btn.style.width = '100%';
+    btn.style.margin = '3px 0';
     btn.style.padding = '6px 8px';
     btn.style.fontSize = '12px';
     btn.style.background = '#222';
     btn.style.color = '#fff';
     btn.style.border = '1px solid #888';
     btn.style.borderRadius = '4px';
-
     btn.onclick = handler;
-    document.body.appendChild(btn);
+    parent.appendChild(btn);
   };
 
-  self.addStatus = function() {
-    if (document.getElementById('hiratsuka-mod-audit-status')) return;
+  self.addCompactUI = function() {
+    if (document.getElementById('hiratsuka-mod-main-btn')) return;
 
-    var box = document.createElement('div');
-    box.id = 'hiratsuka-mod-audit-status';
-    box.textContent = 'MOD Portal List v0.6.1';
-    box.style.position = 'absolute';
-    box.style.right = '8px';
-    box.style.bottom = '260px';
-    box.style.zIndex = '10000';
-    box.style.padding = '5px 7px';
-    box.style.fontSize = '11px';
-    box.style.background = 'rgba(0,0,0,0.75)';
-    box.style.color = '#fff';
-    box.style.border = '1px solid #666';
-    box.style.borderRadius = '4px';
-    box.style.maxWidth = '210px';
+    var main = document.createElement('button');
+    main.id = 'hiratsuka-mod-main-btn';
+    main.textContent = 'MOD';
+    main.style.position = 'absolute';
+    main.style.right = '8px';
+    main.style.bottom = '45px';
+    main.style.zIndex = '10000';
+    main.style.padding = '8px 12px';
+    main.style.fontSize = '13px';
+    main.style.background = '#222';
+    main.style.color = '#fff';
+    main.style.border = '1px solid #aaa';
+    main.style.borderRadius = '5px';
+    main.onclick = self.toggleMenu;
+    document.body.appendChild(main);
 
-    document.body.appendChild(box);
+    var menu = document.createElement('div');
+    menu.id = 'hiratsuka-mod-menu';
+    menu.style.position = 'absolute';
+    menu.style.right = '8px';
+    menu.style.bottom = '86px';
+    menu.style.zIndex = '10000';
+    menu.style.width = '98px';
+    menu.style.padding = '5px';
+    menu.style.background = 'rgba(0,0,0,0.85)';
+    menu.style.border = '1px solid #777';
+    menu.style.borderRadius = '5px';
+    menu.style.display = 'none';
+
+    self.addButton(menu, '取得', self.startFetch);
+    self.addButton(menu, '停止', self.stopFetch);
+    self.addButton(menu, 'コピー', self.copyLog);
+    self.addButton(menu, '一覧', self.togglePanel);
+    self.addButton(menu, '脆弱', function() { self.setSort('weak'); });
+    self.addButton(menu, '硬い', function() { self.setSort('hard'); });
+    self.addButton(menu, '反撃', function() { self.setSort('react'); });
+    self.addButton(menu, '閉じる', function() { menu.style.display = 'none'; });
+
+    document.body.appendChild(menu);
+
+    var status = document.createElement('div');
+    status.id = 'hiratsuka-mod-audit-status';
+    status.textContent = 'MOD v0.6.2';
+    status.style.position = 'absolute';
+    status.style.right = '8px';
+    status.style.bottom = '89px';
+    status.style.zIndex = '9999';
+    status.style.padding = '4px 6px';
+    status.style.fontSize = '10px';
+    status.style.background = 'rgba(0,0,0,0.70)';
+    status.style.color = '#fff';
+    status.style.border = '1px solid #666';
+    status.style.borderRadius = '4px';
+    status.style.maxWidth = '130px';
+    document.body.appendChild(status);
   };
 
   self.setup = function() {
-    self.addStatus();
-    self.addButton('hiratsuka-mod-fetch-btn', 'MOD取得開始', 220, self.startFetch);
-    self.addButton('hiratsuka-mod-stop-btn', '停止', 190, self.stopFetch);
-    self.addButton('hiratsuka-mod-copy-btn', 'MODコピー', 160, self.copyLog);
-    self.addButton('hiratsuka-mod-panel-btn', '一覧', 130, self.togglePanel);
-    self.addButton('hiratsuka-mod-weak-btn', '脆弱順', 100, function() { self.setSort('weak'); });
-    self.addButton('hiratsuka-mod-hard-btn', '硬い順', 70, function() { self.setSort('hard'); });
-    self.addButton('hiratsuka-mod-react-btn', '反撃順', 40, function() { self.setSort('react'); });
-
-    console.log('Hiratsuka MOD Portal List v0.6.1 loaded');
+    self.addCompactUI();
+    console.log('Hiratsuka MOD Portal List v0.6.2 loaded');
   };
 
   var setup = self.setup;
