@@ -2,8 +2,8 @@
 // @id             iitc-plugin-hiratsuka-mod-audit
 // @name           IITC plugin: Hiratsuka MOD Portal List
 // @category       Info
-// @version        0.6.0
-// @description    Hiratsuka MOD audit portal list with weak/hard sorting
+// @version        0.6.1
+// @description    Hiratsuka MOD audit portal list with closable panel
 // @match          https://intel.ingress.com/*
 // @grant          none
 // ==/UserScript==
@@ -22,7 +22,6 @@ function wrapper() {
   self.queue = [];
   self.running = false;
   self.timer = null;
-  self.results = {};
   self.sortMode = 'weak';
 
   self.classifyMod = function(mod) {
@@ -106,7 +105,6 @@ function wrapper() {
       }
 
       var c = self.classifyMod(mod);
-
       if (!c) continue;
 
       if (c.indexOf('SH') >= 0) result.shield.push(c);
@@ -362,7 +360,7 @@ function wrapper() {
 
     lines.push('');
     lines.push('取得済みMOD: ' + known + '件 / 未取得: ' + unknown + '件');
-    lines.push('【平塚MOD Portal List v0.6】');
+    lines.push('【平塚MOD Portal List v0.6.1】');
     lines.push('方式：Portal List統合 / 半自動低速取得 / ソート=' + self.sortMode);
     lines.push('条件：表示範囲内 / ENL / L' + self.MIN_LEVEL + '以上 / 最大' + self.MAX_TARGETS + '件');
     lines.push('形式：Portal / Faction / Lv / Health / Shield / Turret / FA / Hack / Empty / 判定 / 脆弱度');
@@ -389,6 +387,11 @@ function wrapper() {
     }
   };
 
+  self.closePanel = function() {
+    var panel = document.getElementById('hiratsuka-mod-panel');
+    if (panel) panel.style.display = 'none';
+  };
+
   self.renderPanel = function() {
     var panel = document.getElementById('hiratsuka-mod-panel');
     if (!panel) return;
@@ -397,7 +400,10 @@ function wrapper() {
     var known = records.filter(function(r) { return r.known; }).length;
 
     var html = '';
-    html += '<div style="font-weight:bold;margin-bottom:4px;">平塚MOD Portal List v0.6</div>';
+    html += '<div style="font-weight:bold;margin-bottom:4px;">';
+    html += '平塚MOD Portal List v0.6.1';
+    html += '<button id="hiratsuka-mod-panel-close" style="float:right;background:#333;color:#fff;border:1px solid #aaa;border-radius:3px;">×</button>';
+    html += '</div>';
     html += '<div>取得済み ' + known + ' / ' + records.length + '　並び:' + self.sortMode + '</div>';
     html += '<table style="width:100%;border-collapse:collapse;margin-top:4px;">';
     html += '<tr>';
@@ -422,6 +428,9 @@ function wrapper() {
 
     html += '</table>';
     panel.innerHTML = html;
+
+    var closeBtn = document.getElementById('hiratsuka-mod-panel-close');
+    if (closeBtn) closeBtn.onclick = self.closePanel;
   };
 
   self.togglePanel = function() {
@@ -433,8 +442,8 @@ function wrapper() {
       panel.style.position = 'absolute';
       panel.style.left = '8px';
       panel.style.bottom = '50px';
-      panel.style.zIndex = '9999';
-      panel.style.width = '92%';
+      panel.style.zIndex = '9998';
+      panel.style.width = '78%';
       panel.style.maxHeight = '45%';
       panel.style.overflow = 'auto';
       panel.style.background = 'rgba(0,0,0,0.88)';
@@ -465,7 +474,7 @@ function wrapper() {
     btn.style.position = 'absolute';
     btn.style.right = '8px';
     btn.style.bottom = bottom + 'px';
-    btn.style.zIndex = '9999';
+    btn.style.zIndex = '10000';
     btn.style.padding = '6px 8px';
     btn.style.fontSize = '12px';
     btn.style.background = '#222';
@@ -482,11 +491,11 @@ function wrapper() {
 
     var box = document.createElement('div');
     box.id = 'hiratsuka-mod-audit-status';
-    box.textContent = 'MOD Portal List v0.6';
+    box.textContent = 'MOD Portal List v0.6.1';
     box.style.position = 'absolute';
     box.style.right = '8px';
     box.style.bottom = '260px';
-    box.style.zIndex = '9999';
+    box.style.zIndex = '10000';
     box.style.padding = '5px 7px';
     box.style.fontSize = '11px';
     box.style.background = 'rgba(0,0,0,0.75)';
@@ -508,7 +517,7 @@ function wrapper() {
     self.addButton('hiratsuka-mod-hard-btn', '硬い順', 70, function() { self.setSort('hard'); });
     self.addButton('hiratsuka-mod-react-btn', '反撃順', 40, function() { self.setSort('react'); });
 
-    console.log('Hiratsuka MOD Portal List v0.6 loaded');
+    console.log('Hiratsuka MOD Portal List v0.6.1 loaded');
   };
 
   var setup = self.setup;
