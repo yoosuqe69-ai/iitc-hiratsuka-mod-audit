@@ -2,8 +2,8 @@
 // @id             iitc-plugin-hiratsuka-mod-audit
 // @name           IITC plugin: Hiratsuka MOD Audit
 // @category       Info
-// @version        0.2.0
-// @description    Hiratsuka MOD audit copy helper with unknown MOD detection
+// @version        0.3.0
+// @description    Hiratsuka MOD audit copy helper with portal detail cache support
 // @match          https://intel.ingress.com/*
 // @grant          none
 // ==/UserScript==
@@ -17,11 +17,22 @@ function wrapper() {
   self.classifyMod = function(mod) {
     if (!mod) return null;
 
-    var name = (mod.name || mod.displayName || '').toLowerCase();
-    var rarity = (mod.rarity || '').toLowerCase();
+    var name = (
+      mod.name ||
+      mod.displayName ||
+      mod.type ||
+      mod.itemType ||
+      ''
+    ).toLowerCase();
+
+    var rarity = (
+      mod.rarity ||
+      mod.rarityString ||
+      ''
+    ).toLowerCase();
 
     if (name.indexOf('shield') >= 0) {
-      if (rarity.indexOf('very') >= 0 || name.indexOf('very') >= 0) return 'VRSH';
+      if (rarity.indexOf('very') >= 0 || name.indexOf('very') >= 0 || name.indexOf('vr') >= 0) return 'VRSH';
       if (rarity.indexOf('rare') >= 0) return 'RSH';
       if (rarity.indexOf('common') >= 0) return 'CSH';
       return 'SH';
@@ -33,6 +44,53 @@ function wrapper() {
     if (name.indexOf('multi') >= 0) return 'MH';
 
     return null;
+  };
+
+  self.getPortalDetails = function(guid, p) {
+    var d = p && p.options ? p.options.data : null;
+
+    if (d && Array.isArray(d.mods)) return d;
+
+    if (window.portalDetail && typeof window.portalDetail.get === 'function') {
+      var pd1 = window.portalDetail.get(guid);
+      if (pd1) return pd1;
+    }
+
+    if (window.portalDetails && window.portalDetails[guid]) {
+      return window.portalDetails[guid];
+    }
+
+    if (window.portalDetail && window.portalDetail[guid]) {
+      return window.portalDetail[guid];
+    }
+
+    return d || {};
+  };
+
+  self.getMods = function(guid, p) {
+    var detail = self.getPortalDetails(guid, p);
+
+    if (!detail) return undefined;
+
+    if (Array.isArray(detail.mods)) return detail.mods;
+
+    if (detail.portalV2 && Array.isArray(detail.portalV2.linkedModArray)) {
+      return detail.portalV2.linkedModArray;
+    }
+
+    if (Array.isArray(detail.linkedModArray)) {
+      return detail.linkedModArray;
+    }
+
+    if (detail.result && Array.isArray(detail.result.mods)) {
+      return detail.result.mods;
+    }
+
+    if (detail.result && detail.result.portalV2 && Array.isArray(detail.result.portalV2.linkedModArray)) {
+      return detail.result.portalV2.linkedModArray;
+    }
+
+    return undefined;
   };
 
   self.analyzeMods = function(mods) {
@@ -64,7 +122,7 @@ function wrapper() {
       var c = self.classifyMod(mod);
 
       if (!c) {
-        result.ignored.push(mod.name || mod.displayName || 'OTHER');
+        result.ignored.push(mod.name || mod.displayName || mod.type || mod.itemType || 'OTHER');
         continue;
       }
 
@@ -97,22 +155,30 @@ function wrapper() {
     return result;
   };
 
-  self.portalLine = function(p) {
-    var d = p.options.data || {};
-    var mods = d.hasOwnProperty('mods') ? d.mods : undefined;
+  self.portalLine = function(guid, p) {
+    var base = p.options.data || {};
+    var detail = self.getPortalDetails(guid, p);
+    var mods = self.getMods(guid, p);
     var m = self.analyzeMods(mods);
 
+    var d = detail || base;
+
+    var title = base.title || d.title || '(no name)';
+    var level = base.level || d.level || '-';
+    var health = base.health || d.health || '-';
+    var team = base.team || d.team || '-';
+
     var faction =
-      d.team === 'E' ? 'ENL' :
-      d.team === 'R' ? 'RES' :
-      d.team || '-';
+      team === 'E' ? 'ENL' :
+      team === 'R' ? 'RES' :
+      team || '-';
 
     if (!m.known) {
       return [
-        d.title || '(no name)',
+        title,
         faction,
-        'L' + (d.level || '-'),
-        (d.health || '-') + '%',
+        'L' + level,
+        health + '%',
         'MOD未取得',
         '-',
         '-',
@@ -123,10 +189,10 @@ function wrapper() {
     }
 
     return [
-      d.title || '(no name)',
+      title,
       faction,
-      'L' + (d.level || '-'),
-      (d.health || '-') + '%',
+      'L' + level,
+      health + '%',
       m.shield.length ? m.shield.join(',') : '-',
       m.turret ? '有' : '-',
       m.fa ? '有' : '-',
@@ -139,7 +205,7 @@ function wrapper() {
   self.buildLog = function() {
     var lines = [];
 
-    lines.push('【平塚MOD監査ログ v0.2】');
+    lines.push('【平塚MOD監査ログ v0.3】');
     lines.push('形式：Portal / Faction / Lv / Health / Shield / Turret / FA / Hack / Empty / 判定');
     lines.push('');
 
@@ -151,7 +217,7 @@ function wrapper() {
       var d = p.options.data;
       if (!d.team || d.team === 'N') return;
 
-      lines.push(self.portalLine(p));
+      lines.push(self.portalLine(guid, p));
     });
 
     return lines.join('\n');
@@ -194,7 +260,7 @@ function wrapper() {
 
   self.setup = function() {
     self.addButton();
-    console.log('Hiratsuka MOD Audit v0.2 loaded');
+    console.log('Hiratsuka MOD Audit v0.3 loaded');
   };
 
   var setup = self.setup;
